@@ -2,7 +2,6 @@
 using Azure;
 using Azure.AI.Vision.ImageAnalysis;
 using DocumentFormat.OpenXml;
-using DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
 
@@ -14,61 +13,56 @@ ImageAnalysisClient client = new ImageAnalysisClient(new Uri(endpoint), new Azur
 
 using (PresentationDocument presentation = PresentationDocument.Open(pptxPath, true))
 {
-    var foo = presentation.PresentationPart.GetPartsOfType<FontPart>();
+    IEnumerable<SlidePart>? slideParts = presentation?.PresentationPart?.SlideParts;
 
-    presentation.PresentationPart.DeleteParts<FontPart>(foo);
+    if (slideParts is not null)
+    {
+        foreach (SlidePart slide in slideParts)
+        {
+            IEnumerable<Picture> pictures = slide.Slide.Descendants<Picture>();
 
+            if (pictures is not null)
+            {
+                foreach (Picture picture in pictures)
+                {
+                    NonVisualDrawingProperties? cNvPr = picture.NonVisualPictureProperties?.NonVisualDrawingProperties;
 
-    //IEnumerable<SlidePart>? slideParts = presentation?.PresentationPart?.SlideParts;
+                    if (cNvPr is not null)
+                    {
+                        StringValue? description = cNvPr.Description;
 
-    //if (slideParts is not null)
-    //{
-    //    foreach (SlidePart slide in slideParts)
-    //    {
-    //        IEnumerable<Picture> pictures = slide.Slide.Descendants<Picture>();
+                        string? relationshipId = picture.BlipFill?.Blip?.Embed?.Value;
 
-    //        if (pictures is not null)
-    //        {
-    //            foreach (Picture picture in pictures)
-    //            {
-    //                NonVisualDrawingProperties? cNvPr = picture.NonVisualPictureProperties?.NonVisualDrawingProperties;
+                        if (relationshipId is null)
+                        {
+                            continue;
+                        }
 
-    //                if (cNvPr is not null)
-    //                {
-    //                    StringValue? description = cNvPr.Description;
+                        ImagePart imagePart = (ImagePart)slide.GetPartById(relationshipId);
 
-    //                    string? relationshipId = picture.BlipFill?.Blip?.Embed?.Value;
+                        using (Stream imageStream = imagePart.GetStream())
+                        {
+                            BinaryData binaryData = BinaryData.FromStream(imageStream);
+                            ImageAnalysisResult result = client.Analyze(binaryData, VisualFeatures.Caption);
 
-    //                    if (relationshipId is null)
-    //                    {
-    //                        continue;
-    //                    }
+                            Console.WriteLine("Image analysis results:");
+                            Console.WriteLine(" Caption:");
+                            Console.WriteLine($"   '{result.Caption.Text}', Confidence {result.Caption.Confidence:F4}");
 
-    //                    ImagePart imagePart = (ImagePart)slide.GetPartById(relationshipId);
+                            cNvPr.Description = result.Caption.Text;
+                        }
 
-    //                    using (Stream imageStream = imagePart.GetStream())
-    //                    {
-    //                        BinaryData binaryData = BinaryData.FromStream(imageStream);
-    //                        ImageAnalysisResult result = client.Analyze(binaryData, VisualFeatures.Caption);
-
-    //                        Console.WriteLine("Image analysis results:");
-    //                        Console.WriteLine(" Caption:");
-    //                        Console.WriteLine($"   '{result.Caption.Text}', Confidence {result.Caption.Confidence:F4}");
-
-    //                        cNvPr.Description = result.Caption.Text;
-    //                    }
-
-    //                    if (description is not null)
-    //                    {
-    //                        Console.WriteLine($"Name: {cNvPr.Name} Description: {description}");
-    //                    }
-    //                    else
-    //                    {
-    //                        Console.WriteLine($"Name: {cNvPr.Name}, No Description");
-    //                    }
-    //                }
-    //            }
-    //        }
-    //    }
-    //}
+                        if (description is not null)
+                        {
+                            Console.WriteLine($"Name: {cNvPr.Name} Description: {description}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Name: {cNvPr.Name}, No Description");
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
